@@ -1,5 +1,8 @@
+library(crayon)
 
 #con = stdin()
+options(warn=-1)
+
 
 if (interactive()) {
   con <- stdin()
@@ -38,13 +41,28 @@ while (! user_symbol %in% c("X", "O")){
   bad_selection = ! user_symbol %in% c("X", "O")
   
 }
+
 symbols = c("X", "O")
 
 robot_symbol_idx = which(symbols != user_symbol)
 robot_symbol = symbols[robot_symbol_idx]
 
-#cat("Current board status:\n")
-#print(ttt_board)
+
+print_board = function(){
+  
+  ttt4printing = ttt_board
+  ttt4printing[is.na(ttt4printing)] = ' '
+  cat(sprintf("    %s   %s   %s \n", 1, 2, 3))
+  cat("\n")
+  cat(do.call(sprintf, as.list(c("1   %s | %s | %s \n", unlist(ttt4printing[1, ])))))
+  cat("   -----------\n")
+  cat(do.call(sprintf, as.list(c("2   %s | %s | %s \n", unlist(ttt4printing[2, ])))))
+  cat("   -----------\n")
+  cat(do.call(sprintf, as.list(c("3   %s | %s | %s \n", unlist(ttt4printing[3, ])))))
+  
+  
+  
+}
 
 receive_user_selection = function(){
   
@@ -56,7 +74,7 @@ receive_user_selection = function(){
     
     while (not_valid_selection){
       
-      cat('Choose a row number: ')
+      cat('\nChoose a row number: ')
       row = readLines(con, n = 1)
       cat('Choose a column number: ')
       col = readLines(con, n = 1)
@@ -68,8 +86,8 @@ receive_user_selection = function(){
         
       }else{
         
-        cat("The row and/or column selected are not valid.\n")
-        cat("Please choose a number among 1, 2 and 3 for your row and column selection.\n")
+        cat(red(bold("The row and/or column selected are not valid.\n")))
+        cat("Please choose a number among", red(bold("1, 2 and 3"))," for your row and column selection.\n")
         
       }
       
@@ -86,9 +104,9 @@ receive_user_selection = function(){
       
     }else{
       
-      cat("Your chosen position is not available on the board. Please try again.\n")
-      cat("Current board status:\n")
-      print(ttt_board)
+      cat(red(bold("Your chosen position is not available on the board. Please try again.\n")))
+      cat("\n\nCurrent board status:\n\n")
+      print_board()
       
     }
   
@@ -160,26 +178,20 @@ handle_play = function(symbol){
     is_there_a_winner <<- TRUE
     
     if(symbol == user_symbol){
-      print(ttt_board)
-      cat("You won!\n")
-      cat("Available positions after victory:\n")
-      print(available_positions)
-      #break
+      print_board()
+      cat("\nYOU WON! :) \n\n")
       
     }else if (symbol == robot_symbol){
-      print(ttt_board)
-      cat("The robot won :( \nGood luck next time..!\n")
-      cat("Available positions after victory:\n")
-      print(available_positions)
-      #break
+      print_board()
+      cat("The robot won :( \nGood luck next time..!\n\n")
     }
     
   }else if (no_more_available_positions){
     
-    cat("It's a draw!\n")
-    cat("Current board status:\n")
-    print(ttt_board)
-    #break
+    
+    cat("\n\nCurrent board status:\n\n")
+    print_board()
+    cat("\n\nIT'S A DRAW :|\n\nGood luck next time..!\n\n")
   }
   
   should_break = is_there_a_winner | no_more_available_positions
@@ -189,19 +201,13 @@ handle_play = function(symbol){
 }
 
 cat("INITIAL board status:\n")
-print(ttt_board)
-
-cat("INITIAL available positions:\n")
-print(available_positions)
+print_board()
 
 is_there_a_winner = FALSE
 
 while(! is_there_a_winner & nrow(available_positions) > 0){
   
   let_symbol_play("X")
-  
-  cat("Available positions:\n")
-  print(available_positions)
 
   should_break = handle_play("X")
   
@@ -209,13 +215,9 @@ while(! is_there_a_winner & nrow(available_positions) > 0){
     break
   }
   
-  cat("Current board status:\n")
-  print(ttt_board)
-  
+  cat("\n\nCurrent board status:\n\n")
+  print_board()
   let_symbol_play("O")
-  
-  cat("Available positions:\n")
-  print(available_positions)
   
   should_break = handle_play("O")
   
@@ -223,7 +225,7 @@ while(! is_there_a_winner & nrow(available_positions) > 0){
     break
   }
   
-  cat("Current board status:\n")
-  print(ttt_board)
+  cat("\n\nCurrent board status:\n\n")
+  print_board()
   
 }

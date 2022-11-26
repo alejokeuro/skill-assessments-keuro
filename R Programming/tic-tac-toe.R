@@ -7,6 +7,8 @@ if (interactive()) {
   con <- "stdin"
 }
 
+set.seed(as.integer(Sys.time()))
+
 #create data frame with 0 rows and 3 columns
 ttt_board <- data.frame(matrix(ncol = 3, nrow = 3))
 #provide column names
@@ -98,7 +100,7 @@ receive_user_selection = function(){
 
 receive_robot_selection = function() {
   
-  robot_selection = sample(1:length(available_positions), size = 1)
+  robot_selection = sample(1:nrow(available_positions), size = 1)
   
   robot_selection = unlist(available_positions[robot_selection, ])
   
@@ -149,6 +151,43 @@ is_symbol_winner = function(symbol){
   
 }
 
+handle_play = function(symbol){
+  
+  no_more_available_positions = nrow(available_positions) == 0
+  
+  if (is_symbol_winner(symbol)){
+    
+    is_there_a_winner <<- TRUE
+    
+    if(symbol == user_symbol){
+      print(ttt_board)
+      cat("You won!\n")
+      cat("Available positions after victory:\n")
+      print(available_positions)
+      #break
+      
+    }else if (symbol == robot_symbol){
+      print(ttt_board)
+      cat("The robot won :( \nGood luck next time..!\n")
+      cat("Available positions after victory:\n")
+      print(available_positions)
+      #break
+    }
+    
+  }else if (no_more_available_positions){
+    
+    cat("It's a draw!\n")
+    cat("Current board status:\n")
+    print(ttt_board)
+    #break
+  }
+  
+  should_break = is_there_a_winner | no_more_available_positions
+  
+  should_break
+  
+}
+
 cat("INITIAL board status:\n")
 print(ttt_board)
 
@@ -160,70 +199,27 @@ is_there_a_winner = FALSE
 while(! is_there_a_winner & nrow(available_positions) > 0){
   
   let_symbol_play("X")
+  
   cat("Available positions:\n")
   print(available_positions)
 
-  if (is_symbol_winner("X")){
-    
-    is_there_a_winner = TRUE
-    
-    if("X" == user_symbol){
-      print(ttt_board)
-      cat("You won!\n")
-      cat("Available positions after victory:\n")
-      print(available_positions)
-      break
-      
-    }else if ("X" == robot_symbol){
-      print(ttt_board)
-      cat("The robot won :( \nGood luck next time..!\n")
-      cat("Available positions after victory:\n")
-      print(available_positions)
-      break
-    }
+  should_break = handle_play("X")
   
-  }else if (nrow(available_positions) == 0){
-    
-    cat("It's a draw!\n")
-    cat("Current board status:\n")
-    print(ttt_board)
+  if (should_break){
     break
   }
   
   cat("Current board status:\n")
   print(ttt_board)
   
-  # play_outcomes = 
   let_symbol_play("O")
+  
   cat("Available positions:\n")
   print(available_positions)
-  # available_positions = play_outcomes[[1]]
-  # ttt_board = play_outcomes[[2]]
-
-  if (is_symbol_winner("O")){
-    
-    is_there_a_winner = TRUE
-    
-    if("O" == user_symbol){
-      print(ttt_board)
-      cat("You won!\n")
-      cat("Available positions after victory:\n")
-      print(available_positions)
-      break
-      
-    }else if ("O" == robot_symbol){
-      print(ttt_board)
-      cat("The robot won :( \nGood luck next time..!\n")
-      cat("Available positions after victory:\n")
-      print(available_positions)
-      break
-    }
-    
-  }else if (nrow(available_positions) == 0){
-    
-    cat("It's a draw!\n")
-    cat("Current board status:\n")
-    print(ttt_board)
+  
+  should_break = handle_play("O")
+  
+  if (should_break){
     break
   }
   
@@ -231,61 +227,3 @@ while(! is_there_a_winner & nrow(available_positions) > 0){
   print(ttt_board)
   
 }
-
-# 
-# while(!is_there_a_winner){
-# 
-# 
-#   user_selection = receive_input()
-#   # user_selection = c(2, 2)
-#   play_outcomes = execute_selection(user_selection, user_symbol)
-#   available_positions = play_outcomes[[1]]
-#   ttt_board = play_outcomes[[2]]
-# 
-#   is_user_winner = is_symbol_winner(user_symbol)
-#   print("Current status of the game board:")
-#   print(ttt_board)
-# 
-#   if (is_user_winner){
-# 
-#     is_there_a_winner = TRUE
-# 
-#     cat("You won!")
-#     print("The available positions are:")
-#     print(available_positions)
-# 
-#     break
-# 
-#   }
-# 
-# 
-#   robot_selection = sample(1:length(available_positions), size = 1)
-#   robot_selection = unlist(available_positions[robot_selection, ])
-#   robot_selection
-# 
-#   available_positions
-#   play_outcomes = execute_selection(robot_selection, robot_symbol)
-# 
-#   print(paste("Robot has just played at row",
-#               robot_selection[1], "and column", robot_selection[2], sep = ' '))
-#   available_positions = play_outcomes[[1]]
-#   ttt_board = play_outcomes[[2]]
-#   is_robot_winner = is_symbol_winner(robot_symbol)
-# 
-#   print("Current status of the game board:")
-#   print(ttt_board)
-# 
-#   if (is_robot_winner){
-# 
-#     is_there_a_winner = TRUE
-# 
-#     cat("The robot won!")
-#     print("The available positions are:")
-#     print(available_positions)
-# 
-#     break
-# 
-#   }
-# 
-# 
-# }

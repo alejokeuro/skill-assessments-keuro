@@ -119,7 +119,11 @@ let_symbol_play <- function(symbol) {
   if (symbol == user_symbol) {
     selection <- receive_user_selection()
   } else {
+    Sys.sleep(2)
     selection <- receive_robot_selection()
+    cat(red(bold(sprintf("\nRobot decided to place an %s on row %s - column %s", 
+                robot_symbol, selection[1], selection[2]))))
+    Sys.sleep(1)
   }
 
   play_outcomes <- execute_selection(selection, symbol)
@@ -144,6 +148,7 @@ handle_play <- function(symbol) {
 
   if (is_symbol_winner(symbol)) {
     is_there_a_winner <<- TRUE
+    Sys.sleep(2)
     cat("\nFINAL STATUS OF THE BOARD:\n\n")
     if (symbol == user_symbol) {
       print_board()

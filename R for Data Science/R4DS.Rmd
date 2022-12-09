@@ -1,0 +1,747 @@
+---
+title: "R for Data Science - Skill Assesment"
+author: "Alejo Keuroghlanian"
+date: "2022-12-04"
+output: 
+  html_document:
+    theme: spacelab
+    highlight: tango
+    number_sections: true
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(plotly)
+library(kableExtra)
+
+options(warn = -1)
+
+# setwd('repos/bioresnet/skill-assessments-keuro/R for Data Science')
+gm <- read_csv("gapminder_clean.csv")
+```
+
+# Introduction
+
+In the present work I will use [Gapminder Foundation's](https://www.gapminder.org/) data to address questions in the context of [skill assessments](https://github.com/Bioinformatics-Research-Network/skill-assessments) of the [Bioinformatics Research Network](https://www.bioresnet.org/). The Gapminder data is a collection of statistical data on various indicators of global development, such as population, income, health, and education.
+
+The available data for the assessment is a table *mostly* aggregated at the Year-Country level (see **Preprocessing Steps** section), i.e., indicators are computed with this level of granularity. The observations encompass a period from 1962 through 2007: there is one observation every five years, for each country. Among the included indicators, we have e. g.:
+
+1.  CO2 emissions (metric tons per capita)
+2.  Imports of goods and services (% of GDP)
+3.  Population
+4.  Energy use (kg of oil equivalent per capita)
+5.  GDP per capita
+6.  Population density (people per sq. km of land area)
+7.  Life expectancy at birth, total (years)
+8.  etc.
+
+# Preprocessing Steps
+
+After working through all the questions, I realized that many rows of the original table didn't have an associated continent. By exploring the table, I realized that under the column "Country Name" there were some values like "Middle East & North Africa", "OECD members", "Lower middle income", etc. These rows presumably aggregate data of different countries that do not have just *one* continent associated with them. Therefore, it's reasonable not to have continent data for these rows.
+
+However, some rows actually correspond to countries (e.g., "Papua New Guinea", "Monaco", "Korea, Dem. People�s Rep.", etc.), and these do not have an associated continent. These countries need to have their continent datum imputed since the continent variable is crucial to some of the questions in the assessment.
+
+## External source for a continent lookup table
+
+I found a table of countries of the world and their respective continents at [https://statisticstimes.com/geography/countries-by-continents.php](https://statisticstimes.com/geography/countries-by-continents.php). After donwloading it, I:
+
+1. Extracted a list of unique values in "Country Name" column from Gapminder table,
+2. Did the same for the table of the above mentioned website,
+3. Used [ChatGPT](https://chat.openai.com/chat) to build a csv table with the best matching pairs of the above two lists,
+4. The job done by GPT was excellent, although there remained a few countries without a matching partner. These were very few, and I managed to correct it manually.
+5. In this way, I managed to produce a final lookup table that allows me to impute continent for all rows in Gapminder's table, except for Virgin Islands (this case is more difficult to map, since it may refer to *British V.I.*, which would map to Europe; or it could refer to *United States V.I.*, which would map to Americas; I decided to leave continent as `NA` for this country).
+
+```{r echo=FALSE}
+
+# Remember to map manually Korea to Asia and Kosovo to Europe
+# countries_continent_lkp.csv is the table downloaded from
+# https://statisticstimes.com/geography/countries-by-continents.php
+cc_lkp <- read_tsv("countries_continent_lkp.csv",
+  show_col_types = FALSE
+) %>%
+  select(`Country Name`, continent) %>%
+  mutate(continent = ifelse(grepl("America", continent), "Americas", continent)) %>%
+  mutate(
+    country_lkp = `Country Name`,
+    continent_lkp = continent
+  ) %>%
+  select(
+    country_lkp,
+    continent_lkp
+  )
+
+gm_countries_continent <- gm %>%
+  select(`Country Name`, continent) %>%
+  distinct()
+
+# the lookup table I built semi-manually, with the help of ChatGPT
+final_country_mapping <- read_csv("final_country_mapping.csv",
+  show_col_types = FALSE
+)
+
+gm_countries_continent <- left_join(gm_countries_continent,
+  final_country_mapping,
+  by = "Country Name"
+)
+
+gm_countries_continent <- left_join(gm_countries_continent,
+  cc_lkp,
+  by = "country_lkp"
+)
+
+# Impute continent with continent_lkp (from statisticstimes.com's table),
+# whenever there is no available continent
+gm_countries_continent <- gm_countries_continent %>%
+  mutate(continent = ifelse(is.na(continent), continent_lkp, continent))
+
+# Checking which "Country Name"s remained with no associated Continent after using the
+# lookup tables. All of these are not actual countries (e.g., "Middle East & North Africa",
+# "OECD members", "Lower middle income", etc.), except for Virgin Islands.
+
+# gm_countries_continent %>%
+#  filter(is.na(continent)) %>%
+#  select(`Country Name`) %>%
+#  kbl() %>% kable_styling()
+```
+
+
+```{r echo=FALSE}
+
+gm_countries_continent <- gm_countries_continent %>%
+  mutate(continent = ifelse(grepl("Korea", `Country Name`), "Asia", continent)) %>%
+  mutate(continent = ifelse(grepl("Kosovo", `Country Name`), "Europe", continent)) %>%
+  select(`Country Name`, continent) %>%
+  mutate(continent_lkp = continent) %>%
+  select(`Country Name`, continent_lkp)
+
+# Impute continent in the original Gapminder data set
+gm <- left_join(gm,
+  gm_countries_continent,
+  by = "Country Name"
+) %>%
+  mutate(continent = ifelse(is.na(continent), continent_lkp, continent))
+```
+
+# Questions
+
+## Filter the data to include only rows where Year is 1962 and then make a scatter plot comparing `'CO2 emissions (metric tons per capita)'` and `gdpPercap` for the filtered data.
+
+```{r echo=FALSE}
+gm1962 <- gm %>% filter(Year == 1962 &
+  !is.na(`CO2 emissions (metric tons per capita)`) &
+  !is.na(gdpPercap))
+```
+
+```{r echo=FALSE}
+scatter <- ggplot(
+  data = gm1962,
+  aes(
+    x = `CO2 emissions (metric tons per capita)`,
+    y = gdpPercap,
+    text = paste(
+      "Country:", `Country Name`,
+      "\nCO emmissions:", round(`CO2 emissions (metric tons per capita)`, 1),
+      "\nGDP per capita:", round(gdpPercap, 1)
+    )
+  )
+) +
+  geom_point()
+
+ggplotly(scatter, tooltip = "text")
+```
+
+## On the filtered data, calculate the correlation of `'CO2 emissions (metric tons per capita)'` and `gdpPercap.` What is the correlation and associated p value?
+
+```{r echo=FALSE}
+
+co_emm_kuwait <- gm1962 %>%
+  filter(`Country Name` == "Kuwait") %>%
+  select(`CO2 emissions (metric tons per capita)`) %>%
+  unlist() %>%
+  as.vector() %>%
+  round(1)
+
+gdp_per_cap_kuwait <- gm1962 %>%
+  filter(`Country Name` == "Kuwait") %>%
+  select(gdpPercap) %>%
+  unlist() %>%
+  as.vector() %>%
+  round(1) %>%
+  format(big.mark = ",")
+
+corr <- gm1962 %>%
+  summarise(cor = cor(`CO2 emissions (metric tons per capita)`, gdpPercap)) %>%
+  round(3)
+
+corr_pval <- gm1962 %>%
+  summarise(cor = format(cor.test(`CO2 emissions (metric tons per capita)`, gdpPercap)$p.value,
+    scientific = TRUE
+  ))
+```
+
+By looking at the scatterplot above, we realize that computing the correlation between these two variables would yield and artificially high value, due to the presence of the data point corresponding to Kuwait (`'CO2 emissions (metric tons per capita'` = `r co_emm_kuwait` and GDP per capita = `r gdp_per_cap_kuwait`). On the whole dataset, including Kuwait, the correlation is `r corr` and the p-value equals `r corr_pval`. Therefore, I will plot again these data but filtering out Kuwait:
+
+```{r echo=FALSE}
+
+scatter <- ggplot(
+  data = gm1962 %>% filter(`Country Name` != "Kuwait"),
+  aes(
+    x = `CO2 emissions (metric tons per capita)`,
+    y = gdpPercap,
+    text = paste(
+      "Country:", `Country Name`,
+      "\nCO emmissions:", round(`CO2 emissions (metric tons per capita)`, 1),
+      "\nGDP per capita:", round(gdpPercap, 1)
+    )
+  )
+) +
+  geom_point()
+
+ggplotly(scatter, tooltip = "text")
+```
+
+```{r echo=FALSE}
+
+corr <- gm1962 %>%
+  filter(`Country Name` != "Kuwait") %>%
+  summarise(cor = cor(`CO2 emissions (metric tons per capita)`, gdpPercap))
+
+corr_pval <- gm1962 %>%
+  filter(`Country Name` != "Kuwait") %>%
+  summarise(cor = format(cor.test(`CO2 emissions (metric tons per capita)`, gdpPercap)$p.value,
+    scientific = TRUE
+  ))
+```
+
+The correlation on the pruned dataset is `r corr %>% round(3)` and the p-value: `r corr_pval`.
+
+## On the unfiltered data, answer "In what year is the correlation between `'CO2 emissions (metric tons per capita)'` and `gdpPercap` the strongest?" Filter the dataset to that year for the next step...
+
+Below I plot the correlation between these two variables over the years.
+
+```{r echo=FALSE}
+
+year_max_corr <- gm %>%
+  filter(!is.na(`CO2 emissions (metric tons per capita)`) &
+    !is.na(gdpPercap)) %>%
+  group_by(Year) %>%
+  summarise(cor = cor(`CO2 emissions (metric tons per capita)`, gdpPercap)) %>%
+  arrange(desc(cor)) %>%
+  head(1) %>%
+  select(Year) %>%
+  as.vector()
+
+corrs_over_time <- gm %>%
+  filter(!is.na(`CO2 emissions (metric tons per capita)`) &
+    !is.na(gdpPercap)) %>%
+  group_by(Year) %>%
+  summarise(Correlation = cor(`CO2 emissions (metric tons per capita)`, gdpPercap)) %>%
+  ggplot(aes(
+    x = Year,
+    y = Correlation,
+    text = paste(
+      "Year: ", Year,
+      "\nCorrelation:", round(Correlation, 3)
+    ),
+    group = 1
+  )) +
+  geom_line() +
+  geom_point() +
+  ylab("Correlation (GDP per capita VS CO2 emmisions)")
+
+ggplotly(corrs_over_time, tooltip = "text")
+```
+
+
+We can observe that the maximum correlation is attained on year `r year_max_corr`.
+
+## Using `plotly`, create an interactive scatter plot comparing `'CO2 emissions (metric tons per capita)'` and `gdpPercap`, where the point size is determined by `pop` (population) and the color is determined by the `continent`. You can easily convert any `ggplot` plot to a `plotly` plot using the `ggplotly()` command.
+
+Below is the plot:
+
+```{r echo=FALSE}
+p <- ggplot(
+  gm %>% filter(Year == year_max_corr),
+  aes(
+    x = `CO2 emissions (metric tons per capita)`,
+    y = gdpPercap,
+    size = pop,
+    color = continent,
+    text = paste(
+      "CO2 emissions:", round(`CO2 emissions (metric tons per capita)`, 1),
+      "\nGDP per capita:", round(gdpPercap, 1),
+      "\nContinent:", continent,
+      "\nCountry:", `Country Name`,
+      "\nPopulation:", format(pop, big.mark = ",")
+    )
+  )
+) +
+  geom_point() + # aes(size = pop, color = continent))+
+  theme(legend.title = element_blank())
+
+# format(round(energy_use_by_continent_year_per_capita,1),big.mark=',' )
+
+ggplotly(p, tooltip = "text")
+```
+
+## What is the relationship between `continent` and `'Energy use (kg of oil equivalent per capita)'`? (stats test needed)
+
+To answer this question, I think it's good to have an overview of the Energy Use (EU, for short) variable over the years, grouped by Continent. Below is a collection of boxplots, one per year:
+
+```{r echo=FALSE}
+chosen_aspect <- 0.35
+```
+
+```{r echo = FALSE, out.height= "50%", out.width="100%", fig.asp=chosen_aspect}
+
+par(mfrow = c(1, 3))
+i <- 0
+for (year in c(1962, 1967, 1972)) {
+  boxplot(`Energy use (kg of oil equivalent per capita)` ~ continent,
+    data = gm %>% filter(Year == year),
+    main = as.character(year),
+    ylim = c(0, 15000),
+    ylab = ifelse(i %% 3 == 0, "Energy use", ""),
+    xlab = NA
+  )
+
+  i <- i + 1
+}
+```
+
+```{r echo = FALSE, out.height = "20%", , out.width="100%", fig.asp = chosen_aspect}
+
+par(mfrow = c(1, 3))
+i <- 0
+for (year in c(1962, 1967, 1972) + 15) {
+  boxplot(`Energy use (kg of oil equivalent per capita)` ~ continent,
+    data = gm %>% filter(Year == year),
+    main = as.character(year),
+    ylim = c(0, 15000),
+    ylab = ifelse(i %% 3 == 0, "Energy use", ""),
+    xlab = NA
+  )
+
+  i <- i + 1
+}
+```
+
+```{r echo = FALSE, out.width = "100%", fig.asp = chosen_aspect}
+
+par(mfrow = c(1, 3))
+i <- 0
+for (year in c(1962, 1967, 1972) + 30) {
+  boxplot(`Energy use (kg of oil equivalent per capita)` ~ continent,
+    data = gm %>% filter(Year == year),
+    main = as.character(year),
+    ylim = c(0, 15000),
+    ylab = ifelse(i %% 3 == 0, "Energy use", ""),
+    xlab = NA
+  )
+
+  i <- i + 1
+}
+```
+
+```{r echo = FALSE, out.width = "100%", fig.asp = chosen_aspect}
+
+par(mfrow = c(1, 3))
+i <- 0
+for (year in c(2007)) {
+  boxplot(`Energy use (kg of oil equivalent per capita)` ~ continent,
+    data = gm %>% filter(Year == year),
+    main = as.character(year),
+    ylim = c(0, 15000),
+    ylab = ifelse(i %% 3 == 0, "Energy use", ""),
+    xlab = NA
+  )
+
+  i <- i + 1
+}
+```
+
+After exploring the box-plots for each year and continent, I noticed that there was something strange regarding the Americas on years 1962 and 1967, and besides Africa does not appear in those years. Thus, I decided to count the rows (countries) with non-missing EU data for each combination of Year and Continent. These counts are shown in the following table:
+
+```{r echo = FALSE}
+
+gm_with_energy <- gm %>%
+  filter(!is.na(`Energy use (kg of oil equivalent per capita)`))
+
+table(gm_with_energy$Year, gm_with_energy$continent) %>%
+  kbl(caption = "Counts of rows (countries) for each Year-Continent combination.\n(only rows with non-missing EU data included)") %>%
+  kable_styling()
+```
+
+A few observations:
+
+1.  For years 1962 and 1967, there is no EU data for Africa (as noticed before), and only one and two countries data for Asia and Americas, respectively.
+2.  From 1972 onwards, the number of countries with available EU data per continent is more stable, increasing less dramatically over time.
+3.  Oceania has data only for two countries from 1962 through 2002. These countries are Australia and New Zealand.
+4. The number of countries with available EU data displays a sharp increase for year 2007 w.r.t. the previous measurement (2002), especially for Africa, Americas and Oceania.
+
+If we are going to compare energy consumption between continents, it doesn't seem appropriate to include data from years 1962 and 1967, since this would certainly bias Americas data upwards (the only two countries reported for these two years are USA and Canada), apart from the fact that we have no data for Africa and only one country representing Asia. Thus, I decided to discard years 1962 and 1967 for the next steps.
+
+```{r echo=FALSE}
+gm_with_energy <- gm_with_energy %>% filter(!Year %in% c(1962, 1967))
+```
+
+On the other side, if we want to understand the relationship between continent and EU per capita, we need to reconcile data from different countries within each continent. Otherwise, **we would weigh the same way the per-capita datum for countries with very different populations.** Thus, we need to create a variable that computes the EU per capita aggregated at the continent-year level.
+
+This can be achieved by using the other available variables in the dataset, by a sequence of steps:
+
+1.  Computing the EU (total, not per capita) at the country-year level. For this, we will need the Population datum (variable `pop`) to be available. Therefore, we will need to filter out rows that don't meet this requisite.
+2.  Computing the EU (total, not per capita) at the continent-year level.
+3.  Computing the population at the continent-year level.
+4.  Diving EU (continent-year) by population (continent-year), to finally obtain EU per capita at the continent-year level.
+
+By filtering out rows with non-available population datum, the country count per year and continent table looks like follows:
+
+```{r echo = FALSE}
+
+gm_with_energy <- gm_with_energy %>% filter(!is.na(pop))
+
+table(gm_with_energy$Year, gm_with_energy$continent) %>%
+  kbl(caption = "Counts of rows (countries) for each Year-Continent combination.\n(only rows with EU and population data available.)") %>%
+  kable_styling()
+```
+
+Now that we have excluded rows with non-available population data, we can observe that the count of countries doesn't increase so much in 2007 w.r.t. 2002. It seems safe to keep year 2007 for the following analysis.
+
+Finally, we can summarize these metrics in the following boxplot, displaying eight data points for each continent (one per year):
+
+```{r echo=FALSE}
+gm_with_energy <- gm_with_energy %>%
+  filter(!is.na(continent)) %>%
+  mutate(
+    energy_use_by_country_year =
+      `Energy use (kg of oil equivalent per capita)` * pop
+  ) %>%
+  group_by(continent, Year) %>%
+  mutate(
+    pop_by_continent_year = sum(pop),
+    energy_use_by_continent_year = sum(energy_use_by_country_year)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    energy_use_by_continent_year_per_capita =
+      energy_use_by_continent_year / pop_by_continent_year
+  )
+
+
+gm_with_energy_by_year_continent <- gm_with_energy %>%
+  select(continent, Year, energy_use_by_continent_year_per_capita) %>%
+  distinct()
+
+final_boxes <-
+  gm_with_energy_by_year_continent %>%
+  ggplot(aes(
+    x = continent,
+    y = energy_use_by_continent_year_per_capita,
+    fill = continent,
+    text = paste(
+      "Year:", Year,
+      "\nEnergy Use:",
+      format(round(energy_use_by_continent_year_per_capita, 1), big.mark = ",")
+    )
+  )) +
+  geom_boxplot() +
+  geom_jitter(color = "orange", size = 1, alpha = 0.9, width = 0.25) +
+  theme(legend.position = "none") +
+  xlab("Continent") +
+  ylab("Energy use per capita (kg of oil equivalent)")
+
+ggplotly(final_boxes, tooltip = "text")
+```
+
+From this box-plot one can see there is a clear difference between two groups of continents. On one side, there are Africa and Asia, with a lower EU per capita, and on the other Americas, Europe and Oceania, with higher levels. The difference is striking to the eye, so it doesn't seem strictly necessary to conduct a statistical test. However, a statistical test could answer whether there are significant differences between pairs of groups. In our case, ANOVA is not a suitable choice since the boxplot suggests that variances are not the same across groups; besides, an ANOVA would simply reveal that EU per capita is not the same across continents, which is already self-evident. As an alternative, we can use pairwise t-tests and correct for multiple comparisons.
+
+The following table shows the p-values of such pairwise t-tests:
+
+```{r echo=FALSE}
+pair_ttests <- pairwise.t.test(gm_with_energy_by_year_continent$energy_use_by_continent_year_per_capita,
+  gm_with_energy_by_year_continent$continent,
+  p.adjust.method = "BH", pool.sd = FALSE
+)
+
+
+pair_ttests$p.value %>%
+  round(5) %>%
+  kbl(caption = "p-values of pairwise t-test among pairs of countries.") %>%
+  kable_styling()
+```
+
+By conducting pairwise t-tests, and adjusting p-values by the Benjamini-Hochberg procedure, we can observe that there is a significant difference among any pair of chosen continents, except for Africa and Asia ( adjusted p-value ~ `r pair_ttests$p.value["Asia","Africa"] %>% round(2)`): we cannot conclude that the mean EU per capita in Africa is different from that in Asia. To sum up, we can arrange continents in four groups according to their levels of EU per capita, and sort them in increasing order:
+
+1.  Africa and Asia
+2.  Europe
+3.  Americas
+4.  Oceania
+
+### **Final remark on this question.**
+
+This dataset does not include Papua New Guinea (Oceania). This country has way less energy consumption per capita than Autralia and New Zealand (\~3300 kWh vs \~66,600 kWh and \~55,100 kWh, respectively, as of 2019, according to Our World in Data: <https://ourworldindata.org/grapher/per-capita-energy-use?tab=chart&country=PNG~AUS~NZL> - visited on Dec 3rd, 2022). Considering that Papua New Guinea accounts for approximately 21% of Oceania's population (<https://en.wikipedia.org/wiki/List_of_Oceanian_countries_by_population>, visited on Dec 3rd 2022), the inclusion of this country in the dataset would certainly lower the estimate of energy consumption per capita for Oceania. However, enriching the gapminder dataset with external sources seems to be outside the scope of the present skill assessment.
+
+## Is there a significant difference between Europe and Asia with respect to `'Imports of goods and services (% of GDP)'` in the years after 1990? (stats test needed)
+
+Again, similar considerations regarding the aggregation level of reported metrics are necessary here as in the previous question. Imports (% of GDP) is reported at the *country*-year level, and not at the *continent*-year level. If we want to compare this metric for two *continents*, we must first compute this metric at the *continent*-year level.
+
+The following table displays the Imports of goods and services as a percentage of GDP, aggregated at the continent-year level:
+
+```{r echo=FALSE}
+gm_with_imports <- gm %>%
+  filter(continent %in% c("Europe", "Asia") &
+    Year > 1990 &
+    !is.na(`Imports of goods and services (% of GDP)`) &
+    !is.na(pop) & !is.na(gdpPercap)) %>%
+  select(
+    continent,
+    `Country Name`,
+    Year,
+    `Imports of goods and services (% of GDP)`,
+    pop,
+    gdpPercap
+  )
+
+gm_with_imports <- gm_with_imports %>%
+  mutate(gdp = pop * gdpPercap) %>%
+  mutate(imports_goods_services_abs = `Imports of goods and services (% of GDP)` * gdp) %>%
+  group_by(continent, Year) %>%
+  mutate(
+    gdp_by_continent_year = sum(gdp),
+    imports_by_continent_year = sum(imports_goods_services_abs)
+  )
+
+gm_with_imports_by_continent_year <- gm_with_imports %>%
+  select(Year, continent, gdp_by_continent_year, imports_by_continent_year) %>%
+  distinct() %>%
+  mutate(
+    imports_by_continent_year_perc_gdp =
+      imports_by_continent_year / gdp_by_continent_year
+  ) %>%
+  arrange(continent, Year)
+
+table_imports_for_asia_europe <- gm_with_imports_by_continent_year %>%
+  pivot_wider(
+    names_from = continent,
+    values_from = imports_by_continent_year_perc_gdp
+  ) %>%
+  group_by(Year) %>%
+  mutate(
+    Asia = max(Asia, na.rm = T),
+    Europe = max(Europe, na.rm = T)
+  ) %>%
+  select(Year, Asia, Europe) %>%
+  distinct()
+
+table_imports_for_asia_europe %>%
+  round(1) %>%
+  kbl(caption = "Imports of goods and services (% GDP) for Asia and Europe since 1990.") %>%
+  kable_styling()
+```
+
+By looking at this table, one can observe that imports as a percentage of GDP increased for both continents in the period from 1992 through 2007, and Europe's imports are consistently higher for each of the sampled years. Using a box-plot to visualize these data hides this consistent difference over time, since the range encompassed by both continents' imports partially overlaps:
+
+```{r echo=FALSE}
+import_boxes <-
+  gm_with_imports_by_continent_year %>%
+  ggplot(aes(
+    x = continent,
+    y = imports_by_continent_year_perc_gdp,
+    fill = continent,
+    text = paste(
+      "Imports (% GDP):", round(imports_by_continent_year_perc_gdp, 1),
+      "\nContinent:", continent
+    )
+  )) +
+  geom_boxplot() +
+  geom_jitter(color = "black", size = 1, alpha = 0.9, width = 0.25) +
+  xlab("continent") +
+  theme(legend.position = "none") +
+  xlab("Continent") +
+  ylab("Import of goods and services (% of GDP)")
+
+ggplotly(import_boxes, tooltip = "text")
+```
+
+```{r echo=FALSE}
+paired_t <- t.test(
+  gm_with_imports_by_continent_year %>% filter(continent == "Asia") %>%
+    ungroup() %>% select(imports_by_continent_year_perc_gdp) %>% unlist(),
+  gm_with_imports_by_continent_year %>% filter(continent == "Europe") %>%
+    ungroup() %>% select(imports_by_continent_year_perc_gdp) %>% unlist(),
+  paired = TRUE
+)
+```
+
+Thus, it seems more appropriate to compare the groups by pairing the Import values according to Year. These pairs can be compared by using a paired t-test. This test yields a significant difference between the two continents (p-value \< `r format(paired_t$p.value, scientific = TRUE)`)
+
+## What is the country (or countries) that has the highest `'Population density (people per sq. km of land area)'` across all years? (i.e., which country has the highest average ranking in this category across each time point in the dataset?)
+
+Monaco and Macao appear 5 times each in the 10 years sampled as the most densely populated countries in the world:
+
+```{r echo=FALSE}
+gm <- gm %>%
+  group_by(Year) %>%
+  mutate(rank_pop_density = rank(desc(`Population density (people per sq. km of land area)`))) %>%
+  ungroup()
+
+gm_rank_1 <- gm %>% filter(rank_pop_density == 1)
+
+gm_rank_1 %>%
+  group_by(`Country Name`) %>%
+  mutate(`Times ranked first by Population Density` = n()) %>%
+  select(`Country Name`, `Times ranked first by Population Density`) %>%
+  ungroup() %>%
+  distinct() %>%
+  kbl() %>%
+  kable_styling()
+```
+
+
+
+The following table shows in which year each of the two countries ranked as the most densely populated country in the world (indicated by a "1")
+
+```{r echo=FALSE}
+table(gm_rank_1$Year, gm_rank_1$`Country Name`) %>%
+  kbl() %>%
+  kable_styling()
+```
+
+## What country (or countries) has shown the greatest increase in `'Life expectancy at birth, total (years)'` since 1962?
+
+The following plot shows one line for each country: the evolution of Life Expectancy (LE, for short) over the years.
+
+```{r echo=FALSE, out.height = "100%", out.width = "100%"}
+LE_time_courses <- gm %>%
+  filter(!is.na(continent)) %>%
+  arrange(`Country Name`, Year) %>%
+  ggplot(aes(
+    x = Year,
+    y = `Life expectancy at birth, total (years)`,
+    group = `Country Name`,
+    color = continent,
+    text = paste(
+      "Continent:", ifelse(is.na(continent), "Non Available", continent),
+      "\nCountry: ", `Country Name`,
+      "\nLife Expectancy:", round(`Life expectancy at birth, total (years)`, 1),
+      "\nYear:", Year
+    )
+  )) +
+  geom_line(linewidth = 0.25) +
+  geom_point()
+
+ggplotly(LE_time_courses, tooltip = "text")
+```
+
+One can observe that most of the lines seem to show an increasing trend (maybe not perfectly monotonous, but certainly increasing in the long run). However, there are some countries that suffered significant setbacks, possibly because of dictatorships, civil wars, etc. 
+
+If we simply took the percentage increment between the minimum and maximum LE for each country, it's likely that the most highly ranked countries would be examples of such tragedies. Thus, we would pick up countries based on specific historical events rather than countries that managed to increase their LE due to the implementation of public health care policies, sustained economic development, etc. Latter causes seem to be more relevant for the present assessment, while the former (dictatorships, civil wars, etc.) might be more relevant to History scholars. Therefore, I will compute other metrics for each country rather than only the percentage increment between the minimum and maximum of LE. My goal is to build indicators that will reveal which cases are examples of countries that suffered extraordinary events in the course of the years between 1962 and 2007.
+
+The variables I intend to build are:
+
+1.  `min_year`: the first year for which there is LE data for the country in question.
+2.  `max_year`: ..you guessed it! :)
+3.  `year_at_min_LE`: the year in the 1962 --- 2007 time span when the minimum LE was attained.
+4.  `year_at_max_LE`: analogous to `year_at_min_LE`, but for the maximum (enough jokes!).
+5.  `min_LE`: minimum LE attained over all years.
+6.  `max_LE`: maximum LE attained over all years.
+7.  `n_measurements`: Count of years where we have available LE data for the country in question.
+8.  `n_years_LE_decreased`: Count of years when the country in question witnessed a decrease in LE w.r.t. the previous measurement.
+9.  `LE_prcnt_increase`: Percentage increase in LE (`100*(max_LE - min_LE)/min_LE`) over the whole period examined.
+
+The following table shows the top-10 countries ordered by decreasing `LE_prcnt_increase`:
+
+```{r echo=FALSE, out.width="100%"}
+
+gm_life <- gm %>%
+  filter(!is.na(`Life expectancy at birth, total (years)`)) %>%
+  arrange(`Country Name`, Year) %>%
+  group_by(`Country Name`) %>%
+  mutate(
+    min_year = min(Year),
+    max_year = max(Year),
+    year_at_min_LE = Year[which(`Life expectancy at birth, total (years)`
+    == min(`Life expectancy at birth, total (years)`))],
+    year_at_max_LE = Year[which(`Life expectancy at birth, total (years)`
+    == max(`Life expectancy at birth, total (years)`))],
+    min_LE = min(`Life expectancy at birth, total (years)`),
+    max_LE = max(`Life expectancy at birth, total (years)`),
+    life_expectancy_variation_sign =
+      sign(`Life expectancy at birth, total (years)` -
+        lag(`Life expectancy at birth, total (years)`)),
+    n_measurements = n()
+  ) %>%
+  mutate(n_years_LE_decreased = sum(as.integer(life_expectancy_variation_sign == -1), na.rm = T)) %>%
+  ungroup() %>%
+  select(
+    `Country Name`,
+    min_year,
+    max_year,
+    year_at_min_LE,
+    year_at_max_LE,
+    min_LE,
+    max_LE,
+    n_years_LE_decreased,
+    n_measurements
+  ) %>%
+  distinct()
+
+
+gm_life <- gm_life %>%
+  mutate(LE_prcnt_increase = 100 * (max_LE - min_LE) / min_LE) %>%
+  arrange(desc(LE_prcnt_increase)) %>%
+  mutate(
+    min_LE = round(min_LE, 1),
+    max_LE = round(max_LE, 1),
+    LE_prcnt_increase = round(LE_prcnt_increase, 1)
+  ) %>%
+  select(
+    `Country Name`,
+    year_at_min_LE,
+    year_at_max_LE,
+    min_LE,
+    max_LE,
+    n_years_LE_decreased,
+    LE_prcnt_increase,
+    min_year,
+    max_year,
+    n_measurements
+  )
+
+head(gm_life, 10) %>%
+  kbl() %>%
+  kable_styling()
+```
+
+We can observe that the first two countries are Cambodia and Rwanda. Both have the minimum LE much later than 1962, despite both countries having LE data for 1962 (as showed by the `min_year` variable). Besides, these two countries saw their LE's decrease with respect to the previous measurement on two occasions (see column `n_years_LE_decreased`). The years where the minimum LE is attained are 1977 and 1992 for Cambodia and Rwanda, respectively. 
+
+In the case of Cambodia, the minimum of LE around 1977 is explained by the bloody dictatorship of the Khmer Rouge and their leader Pol Pot ( <https://en.wikipedia.org/wiki/Pol_Pot#Leader_of_Kampuchea>, visited on Dec 4th 2022). On the other hand, Rwanda underwent a civil war between the years 1990 and 1994 (<https://en.wikipedia.org/wiki/Rwandan_Civil_War> visited on Dec 4th, 2022), so this seems to explain the low LE measurement. 
+
+The third country in the list, Timor-Leste, traversed years of turmoil during the 1970s: it gained independence from Portugal, underwent a short civil war, and was invaded by Indonesia in 1975. For twenty-four years, the Indonesian government subjected the people of East Timor to routine and systematic torture, sexual slavery, extrajudicial executions, massacres, and deliberate starvation. (<https://en.wikipedia.org/wiki/Indonesian_occupation_of_East_Timor>, visited on Dec 4th, 2022). Indeed, this country has the minimum LE on year 1977. The case of Timor-Leste also seems not to be of special interest for the present assessment.
+
+```{r echo=FALSE} 
+Bhutan_prcnt_increase <- gm_life %>%
+  filter(`Country Name` == "Bhutan") %>%
+  select(LE_prcnt_increase) %>%
+  unlist() %>%
+  as.numeric()
+Bhutan_min_LE <- gm_life %>%
+  filter(`Country Name` == "Bhutan") %>%
+  select(min_LE) %>%
+  unlist() %>%
+  as.numeric()
+Bhutan_max_LE <- gm_life %>%
+  filter(`Country Name` == "Bhutan") %>%
+  select(max_LE) %>%
+  unlist() %>%
+  as.numeric()
+```
+
+The fourth country in the list, Bhutan, does not appear to have underwent major widespread tragedies after 1962, except for the 1990 refugee crisis (<https://en.wikipedia.org/wiki/Bhutan#1990s_refugee_crisis> , visited on Dec 4th 2022). LE for Bhutan displays a steady growth during this period. The overall growth in LE in the period 1962-2007 is of `r Bhutan_prcnt_increase`%, from `r Bhutan_min_LE` to `r Bhutan_max_LE` years.
+

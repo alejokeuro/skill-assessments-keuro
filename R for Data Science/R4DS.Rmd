@@ -19,6 +19,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(plotly)
 library(kableExtra)
+library(latex2exp)
+
 
 options(warn = -1)
 
@@ -132,6 +134,8 @@ gm <- left_join(gm,
 
 ## Filter the data to include only rows where Year is 1962 and then make a scatter plot comparing `'CO2 emissions (metric tons per capita)'` and `gdpPercap` for the filtered data.
 
+In order to better visualize the country-dots, here is the plot on a log-log scale:
+
 ```{r echo=FALSE}
 gm1962 <- gm %>% filter(Year == 1962 &
   !is.na(`CO2 emissions (metric tons per capita)`) &
@@ -142,7 +146,30 @@ gm1962 <- gm %>% filter(Year == 1962 &
 scatter <- ggplot(
   data = gm1962,
   aes(
-    x = `CO2 emissions (metric tons per capita)`,
+    x = log(`CO2 emissions (metric tons per capita)`, base = 10),
+    y = log(gdpPercap, base = 10),
+    text = paste(
+      "Country:", `Country Name`,
+      "\nCO emmissions:", round(`CO2 emissions (metric tons per capita)`, 1),
+      "\nGDP per capita:", round(gdpPercap, 1)
+    )
+  )
+) +
+  geom_point() +
+  xlab('CO2 emissions [metric tons per capita] - log10 scale') +
+  ylab('GDP per capita - log10 scale')
+
+ggplotly(scatter, tooltip = "text") 
+
+```
+
+If we didn't display the dots on a log-log scale, we would see a tiny area of the plot highly crowded, near the axes origin, as below:
+
+```{r echo=FALSE}
+scatter <- ggplot(
+  data = gm1962,
+  aes(
+    x = `CO2 emissions (metric tons per capita)`, 
     y = gdpPercap,
     text = paste(
       "Country:", `Country Name`,
@@ -151,9 +178,12 @@ scatter <- ggplot(
     )
   )
 ) +
-  geom_point()
+  geom_point() +
+  xlab('CO2 emissions [metric tons per capita] - linear scale') +
+  ylab('GDP per capita - linear scale')
 
-ggplotly(scatter, tooltip = "text")
+ggplotly(scatter, tooltip = "text") 
+
 ```
 
 ## On the filtered data, calculate the correlation of `'CO2 emissions (metric tons per capita)'` and `gdpPercap.` What is the correlation and associated p value?
@@ -185,26 +215,8 @@ corr_pval <- gm1962 %>%
   ))
 ```
 
-By looking at the scatterplot above, we realize that computing the correlation between these two variables would yield and artificially high value, due to the presence of the data point corresponding to Kuwait (`'CO2 emissions (metric tons per capita'` = `r co_emm_kuwait` and GDP per capita = `r gdp_per_cap_kuwait`). On the whole dataset, including Kuwait, the correlation is `r corr` and the p-value equals `r corr_pval`. Therefore, I will plot again these data but filtering out Kuwait:
+By looking at the scatterplot above, we realize that computing the correlation between these two variables would yield and artificially high value, due to the presence of the data point corresponding to Kuwait (`'CO2 emissions (metric tons per capita'` = `r co_emm_kuwait` and GDP per capita = `r gdp_per_cap_kuwait`). On the whole dataset, including Kuwait, the correlation is `r corr` and the p-value equals `r corr_pval`.
 
-```{r echo=FALSE}
-
-scatter <- ggplot(
-  data = gm1962 %>% filter(`Country Name` != "Kuwait"),
-  aes(
-    x = `CO2 emissions (metric tons per capita)`,
-    y = gdpPercap,
-    text = paste(
-      "Country:", `Country Name`,
-      "\nCO emmissions:", round(`CO2 emissions (metric tons per capita)`, 1),
-      "\nGDP per capita:", round(gdpPercap, 1)
-    )
-  )
-) +
-  geom_point()
-
-ggplotly(scatter, tooltip = "text")
-```
 
 ```{r echo=FALSE}
 
@@ -219,7 +231,7 @@ corr_pval <- gm1962 %>%
   ))
 ```
 
-The correlation on the pruned dataset is `r corr %>% round(3)` and the p-value: `r corr_pval`.
+However, if we take out Kuwait, the correlation is `r corr %>% round(3)` and the p-value: `r corr_pval`.
 
 ## On the unfiltered data, answer "In what year is the correlation between `'CO2 emissions (metric tons per capita)'` and `gdpPercap` the strongest?" Filter the dataset to that year for the next step...
 
@@ -263,14 +275,14 @@ We can observe that the maximum correlation is attained on year `r year_max_corr
 
 ## Using `plotly`, create an interactive scatter plot comparing `'CO2 emissions (metric tons per capita)'` and `gdpPercap`, where the point size is determined by `pop` (population) and the color is determined by the `continent`. You can easily convert any `ggplot` plot to a `plotly` plot using the `ggplotly()` command.
 
-Below is the plot:
+Below is the plot, on a log-log scale, as in question 3.1:
 
 ```{r echo=FALSE}
 p <- ggplot(
   gm %>% filter(Year == year_max_corr),
   aes(
-    x = `CO2 emissions (metric tons per capita)`,
-    y = gdpPercap,
+    x = log(`CO2 emissions (metric tons per capita)`, base = 10),
+    y = log(gdpPercap, base = 10),
     size = pop,
     color = continent,
     text = paste(
@@ -282,8 +294,10 @@ p <- ggplot(
     )
   )
 ) +
-  geom_point() + # aes(size = pop, color = continent))+
-  theme(legend.title = element_blank())
+  geom_point() +
+  theme(legend.title = element_blank()) +
+  xlab('CO2 emissions [metric tons per capita] - log10 scale') +
+  ylab('GDP per capita - log10 scale')
 
 # format(round(energy_use_by_continent_year_per_capita,1),big.mark=',' )
 

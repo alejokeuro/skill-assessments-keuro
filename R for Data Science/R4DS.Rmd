@@ -279,7 +279,11 @@ Below is the plot, on a log-log scale, as in question 3.1:
 
 ```{r echo=FALSE}
 p <- ggplot(
-  gm %>% filter(Year == year_max_corr),
+  gm %>% 
+    filter(Year == year_max_corr) %>% 
+    drop_na(continent, 
+            `CO2 emissions (metric tons per capita)`,
+            gdpPercap),
   aes(
     x = log(`CO2 emissions (metric tons per capita)`, base = 10),
     y = log(gdpPercap, base = 10),
@@ -597,35 +601,41 @@ Thus, it seems more appropriate to compare the groups by pairing the Import valu
 
 ## What is the country (or countries) that has the highest `'Population density (people per sq. km of land area)'` across all years? (i.e., which country has the highest average ranking in this category across each time point in the dataset?)
 
-Monaco and Macao appear 5 times each in the 10 years sampled as the most densely populated countries in the world:
+I computed, for each year and country, the rank by population density. After computing the average rank over the years for each country, the top 5 countries are the following:
 
 ```{r echo=FALSE}
-gm <- gm %>%
+gm_pop_density_rank <- gm %>%
   group_by(Year) %>%
   mutate(rank_pop_density = rank(desc(`Population density (people per sq. km of land area)`))) %>%
-  ungroup()
-
-gm_rank_1 <- gm %>% filter(rank_pop_density == 1)
-
-gm_rank_1 %>%
+  ungroup() %>% 
   group_by(`Country Name`) %>%
-  mutate(`Times ranked first by Population Density` = n()) %>%
-  select(`Country Name`, `Times ranked first by Population Density`) %>%
-  ungroup() %>%
-  distinct() %>%
+  summarise(`Average Rank (1962 through 2007) of Population Density` = mean(rank_pop_density)) %>%
+  arrange(`Average Rank (1962 through 2007) of Population Density`)
+
+
+gm_pop_density_rank %>%
+  head(5) %>%
   kbl() %>%
   kable_styling()
 ```
 
-
-
-The following table shows in which year each of the two countries ranked as the most densely populated country in the world (indicated by a "1")
+Both Macao and Monaco appear to share the podium, since both have the same average rank. Below is a closer look at how the rank evolved for these two countries over the years.
 
 ```{r echo=FALSE}
-table(gm_rank_1$Year, gm_rank_1$`Country Name`) %>%
-  kbl() %>%
+gm %>%
+  group_by(Year) %>%
+  mutate(rank_pop_density = rank(desc(`Population density (people per sq. km of land area)`))) %>%
+  ungroup() %>%
+  filter(`Country Name` %in% c('Macao SAR, China','Monaco')) %>%
+  select(Year, `Country Name`, rank_pop_density) %>%
+  pivot_wider(id_cols =  Year,
+              names_from = `Country Name`,
+              values_from = rank_pop_density) %>%
+  kbl(caption = "Population Density Rank for Macao and Monaco - 1962 through 2007.") %>%
   kable_styling()
+
 ```
+
 
 ## What country (or countries) has shown the greatest increase in `'Life expectancy at birth, total (years)'` since 1962?
 

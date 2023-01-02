@@ -1,0 +1,386 @@
+---
+title: "RNA-seq Analysis Assessment"
+author: "Alejo Keuroghlanian"
+date: "2023-01-02"
+output: 
+  html_document:
+    theme: spacelab
+    highlight: tango
+    number_sections: true
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(plotly)
+library(kableExtra)
+library(DESeq2)
+library(tidyverse)
+library(ggpubr)
+library(pheatmap)
+library(EnhancedVolcano)
+library(EnsDb.Hsapiens.v86)
+library(msigdbr)
+library(clusterProfiler)
+library(DT)
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+
+options(warn = -1)
+```
+
+# Introduction
+
+In this document I will conduct some of the typical steps in Differential Gene Expression Analysis. To this end, I will analyze an RNA-seq data set provided by the Bioinformatics Research Network. This data set relates to Ewing Sarcoma, and encompasses 7 samples (3 Control samples; 4 from Ewing Sarcoma patients).
+
+
+```{r echo=FALSE}
+
+rse <- readRDS("EwS.rds")
+cd <- as.data.frame(colData(rse))
+```
+
+# Questions
+
+## PCA plot
+
+A first exploratory step consists in conducting a PCA over the genes present in the data set. We would like to visualize the samples in the space defined by the first two principal components. If samples are well separated in this space, this is a strong indication that the expression data displays different patterns across the two conditions. This is indeed the case, as shown in the following plot:
+
+```{r echo=FALSE}
+options(warn = -1)
+
+dds <- DESeqDataSet(rse, design = ~condition)
+
+rld <- rlog(dds)
+
+```
+
+```{r echo=FALSE}
+
+plotPCA(rld) + coord_equal(ratio = 4)
+```
+
+## MA plot
+
+One way to obtain an overview of the results of a DESeq analysis is to generate an MA plot. An MA plot is a scatter plot where each dot represents a gene; the horizontal axis represents the mean expression level across samples; the vertical axis represents the logarithm (base 2) of the ratio between the mean expression levels in both conditions (this is called the *log2 fold change*). In the present analysis, I computed the ratio of the expression levels in the Ewing Sarcoma condition in the numerator and the expression levels in the Control in the denominator. That is to say that a gene is considered *up-regulated* (*down-regulated*) if this ratio is larger (smaller) than 1, i.e., the log of this ratio is larger (smaller) than 0. In other words, genes up/down-regulated in the Ewing Sarcoma condition will be located on the upper/lower-half of the MA plot, above/below the horizontal 0-line.
+
+The color of genes denote whether they are significantly differentially expressed (criterion: FDR-adjusted p-value \< 0.1).
+
+```{r echo=FALSE}
+
+dds <- DESeq(dds)
+
+res <- results(dds, contrast = c("condition", "shEF1", "shCTR"))
+
+resNorm <- lfcShrink(dds = dds, res = res, type = "normal", coef = 2)
+
+```
+
+```{r echo=FALSE}
+plotMA(resNorm)
+```
+
+## Table listing Differentially Expressed Genes
+
+The following table reports all the genes that are deemed significantly differentially expressed (adjusted p-value \< 0.01), sorted by decreasing log2FoldChange.
+
+```{r echo=FALSE}
+resdf <- as.data.frame(resNorm)
+ens2sym <- AnnotationDbi::select(EnsDb.Hsapiens.v86,
+  keys = keys(EnsDb.Hsapiens.v86),
+  columns = c("SYMBOL")
+)
+
+resdf <- resdf %>%
+  rownames_to_column() %>%
+  mutate(GENEID = gsub(rowname, pattern = "\\..+", replacement = "")) %>%
+  dplyr::select(-rowname) %>%
+  inner_join(y = ens2sym, by = "GENEID")
+```
+
+```{r echo=FALSE}
+
+resdf %>%
+  mutate(`Gene Symbol` = SYMBOL) %>%
+  filter(padj < 0.01) %>%
+  arrange(desc(log2FoldChange)) %>%
+  select(`Gene Symbol`, log2FoldChange, padj) %>%
+  DT::datatable(
+    extensions = c("FixedColumns", "FixedHeader"),
+    options = list(
+      scrollX = TRUE,
+      paging = TRUE,
+      fixedHeader = TRUE,
+      searching = FALSE,
+      initComplete = JS(
+        "function(settings, json) {",
+        "$('body').css({'font-family': 'Calibri'});",
+        "}"
+      )
+    )
+  ) %>%
+  formatRound(c("log2FoldChange")) %>%
+  formatSignif("padj") %>%
+  formatStyle(c("Gene Symbol", "log2FoldChange", "padj"), font = "sans-serif")
+
+```
+
+## Volcano Plot
+
+Another way to visualize genes' behavior across the two conditions is a Volcano Plot: a scatter plot where each dot represents a gene; the horizontal axis represents the log2 fold change; the vertical axis is the negative log10 of the adjusted p-value. Thus, significantly up-regulated (down-regulated) genes are located towards the upper right (left) of the scatter plot.
+
+```{r echo=FALSE}
+EnhancedVolcano(resdf,
+  lab = resdf$SYMBOL, pCutoff = 1e-50,
+  FCcutoff = 3,
+  x = "log2FoldChange", y = "padj",
+  subtitle = NULL,
+  axisLabSize = 10,
+  title = NULL,
+  captionLabSize = 8,
+  labSize = 3,
+  legendLabSize = 10
+)
+```
+
+## Heatmap of top 10 over- and under- expressed genes
+
+To gain more insight into the most salient differences between the two conditions, we can focus on the most up/down-regulated genes. In this section, I keep the 10 genes that have the higher log2 fold change, i.e., the 10 most up-regulated genes. Analogously, I keep the 10 genes that have the lowest log2 fold change, i.e., the 10 most down-regulated genes.
+
+These genes are visualized as rows in the following heatmap, while columns represent samples. Both genes and samples are hierarchically clustered. Expression values are transformed using the regularized logarithm function `rlog` in the `DESeq2` package. These values are color-coded in each cell of the heatmap.
+
+```{r echo=FALSE}
+mat <- assay(rld)
+
+rownames(mat) <- lapply(rownames(mat), FUN = function(x) {
+  gsub(
+    pattern = "\\..+",
+    replacement = "",
+    x
+  )
+})
+
+resultsSig <- resdf[which(resdf$padj < 0.01 &
+  abs(resdf$log2FoldChange) >= 1 &
+  resdf$baseMean >= 20), ]
+
+top_bottom_genes <- resultsSig %>%
+  mutate(
+    bottom_rank = rank(log2FoldChange),
+    top_rank = rank(dplyr::desc(log2FoldChange))
+  ) %>%
+  filter(bottom_rank <= 10 |
+    top_rank <= 10) %>%
+  select(GENEID, SYMBOL, log2FoldChange) %>%
+  arrange(desc(log2FoldChange))
+
+top_bottom_GENEIDs <- top_bottom_genes$GENEID
+top_bottom_DE_genes <- mat[top_bottom_GENEIDs, ]
+rownames(top_bottom_DE_genes) <- top_bottom_genes$SYMBOL
+
+pheatmap(top_bottom_DE_genes,
+  scale = "row", show_rownames = TRUE,
+  clustering_distance_rows = "euclidean",
+  annotation_col = cd["condition"],
+  main = "Differentially Expressed genes"
+)
+```
+
+## Enrichment analysis showing the top over- and under-expressed KEGG pathways.
+
+Using Gene Set Enrichment Analysis -GSEA- (`clusterProfiler` package implementation), we can find the KEGG pathways which are most enriched in over (under) expressed genes.
+
+The following two tables report the KEGG pathways that are deemed significantly (adjusted p-value \< 0.05) enriched for up/down-regulated genes, respectively, together with some metrics resulting from the GSEA.
+
+The last two subsections display the GSEA plots for the top 3 most enriched KEGG pathways in up/down-regulated genes, respectively.
+
+```{r echo=FALSE}
+
+resdf <- resdf %>%
+  group_by(row_number()) %>%
+  mutate(padj = case_when(
+    pvalue == 0 ~ 10^runif(n = 1, min = -307, max = -290),
+    TRUE ~ padj
+  )) %>%
+  ungroup() %>%
+  mutate(gsea_metric = -log10(padj) * sign(log2FoldChange))
+
+resdf_with_gsea <- resdf %>%
+  filter(!is.na(gsea_metric)) %>%
+  arrange(desc(gsea_metric))
+
+ranks <- resdf_with_gsea %>%
+  select(SYMBOL, gsea_metric) %>%
+  distinct(SYMBOL, .keep_all = TRUE) %>%
+  deframe()
+
+kegg_gene_sets <- msigdbr(
+  species = "Homo sapiens",
+  category = "C2",
+  subcategory = "CP:KEGG"
+)
+```
+
+```{r echo=FALSE}
+
+kegg_gene_sets <- kegg_gene_sets %>%
+  dplyr::select(gs_name, gene_symbol)
+
+gseares <- GSEA(
+  geneList = ranks,
+  TERM2GENE = kegg_gene_sets
+)
+
+gsearesdf <- as.data.frame(gseares)
+```
+
+### Table of most enriched KEGG pathways in over-expressed genes
+
+```{r echo=FALSE}
+
+gsearesdf %>%
+  filter(NES > 0) %>%
+  arrange(desc(NES)) %>%
+  mutate(
+    p.adjust = format(p.adjust,
+      scientific = T,
+      digits = 3
+    ),
+    NES = format(NES,
+      digits = 3
+    ),
+    enrichmentScore = format(enrichmentScore,
+      digits = 3
+    )
+  ) %>%
+  select(
+    Description,
+    setSize,
+    enrichmentScore,
+    NES,
+    p.adjust
+  ) %>%
+  kbl(row.names = FALSE) %>%
+  kable_styling()
+```
+
+### Table of most enriched KEGG pathways in under-expressed genes
+
+```{r echo=FALSE}
+
+gsearesdf %>%
+  filter(NES < 0) %>%
+  arrange(NES) %>%
+  mutate(
+    p.adjust = format(p.adjust,
+      scientific = T,
+      digits = 3
+    ),
+    NES = format(NES,
+      digits = 3
+    ),
+    enrichmentScore = format(enrichmentScore,
+      digits = 3
+    )
+  ) %>%
+  select(
+    Description,
+    setSize,
+    enrichmentScore,
+    NES,
+    p.adjust
+  ) %>%
+  kbl(row.names = FALSE) %>%
+  kable_styling()
+```
+
+### GSEA plots of the top 3 most enriched KEGG pathways in over-expressed genes
+
+```{r echo=FALSE, out.width = "100%", out.height = "50%"}
+top_pathways <- gsearesdf %>%
+  top_n(n = 3, wt = NES) %>%
+  pull(ID)
+
+top_pathway_plots <- list()
+
+for (pathway in top_pathways) {
+  twoplots <- clusterProfiler::gseaplot(gseares,
+    geneSetID = pathway,
+    title = pathway
+  )
+
+  split_title <- paste(as.vector(unlist(str_split(pathway, "_"))), collapse = " ")
+
+  twoplots[[1]] <- twoplots[[1]] +
+    labs(title = str_wrap(split_title, 18)) +
+    theme(
+      plot.title = element_text(size = rel(1)),
+      axis.title.y = element_text(size = rel(0.75)),
+      axis.text.y = element_text(size = rel(0.75))
+    )
+
+  twoplots[[2]] <- twoplots[[2]] +
+    xlab("Position in the Ranked\nList of Genes") +
+    theme(
+      axis.title.y = element_text(size = rel(0.75)),
+      axis.title.x = element_text(size = rel(0.75)),
+      axis.text.x = element_text(size = rel(0.75)),
+      axis.text.y = element_text(size = rel(0.75))
+    )
+
+  top_pathway_plots <- c(top_pathway_plots, list(twoplots[[1]], twoplots[[2]]))
+}
+
+cowplot::plot_grid(
+  plotlist = top_pathway_plots,
+  ncol = 3, byrow = FALSE
+)
+```
+
+### GSEA plots of the top 3 most enriched KEGG pathways in under-expressed genes
+
+```{r echo=FALSE, out.width = "100%", out.height = "50%"}
+bottom_pathways <- gsearesdf %>%
+  top_n(n = 3, wt = -NES) %>%
+  pull(ID)
+
+bottom_pathway_plots <- list()
+
+for (pathway in bottom_pathways) {
+  twoplots <- clusterProfiler::gseaplot(gseares,
+    geneSetID = pathway,
+    title = pathway
+  )
+
+  split_title <- paste(as.vector(unlist(str_split(pathway, "_"))), collapse = " ")
+
+  twoplots[[1]] <- twoplots[[1]] +
+    labs(title = str_wrap(split_title, 20)) +
+    theme(
+      plot.title = element_text(size = rel(1)),
+      axis.title.y = element_text(size = rel(0.75)),
+      axis.text.y = element_text(size = rel(0.75))
+    )
+
+  twoplots[[2]] <- twoplots[[2]] +
+    xlab("Position in the Ranked\nList of Genes") +
+    theme(
+      axis.title.y = element_text(size = rel(0.75)),
+      axis.title.x = element_text(size = rel(0.75)),
+      axis.text.x = element_text(size = rel(0.75)),
+      axis.text.y = element_text(size = rel(0.75))
+    )
+
+  bottom_pathway_plots <- c(bottom_pathway_plots, list(twoplots[[1]], twoplots[[2]]))
+}
+
+cowplot::plot_grid(
+  plotlist = bottom_pathway_plots,
+  ncol = 3, byrow = FALSE
+)
+```
